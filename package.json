@@ -1,6 +1,6 @@
 {
   "name": "graphyml",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Esta inspirado en la idea de lo que creo que seria graphql pero tomando un nuevo camino apoyado en YAML",
   "main": "graphyml.js",
   "scripts": {

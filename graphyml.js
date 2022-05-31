@@ -1,5 +1,5 @@
 import io from "socket.io-client"
-let callbacks=[]
+let callbacks={}
 let perms={}
 export let namespaces={}
 let _socket
@@ -10,6 +10,7 @@ let _endpoint
 let ctx={}
 export let mutations={}
 export let user=null;
+
 
 let  Mutation={
 	get(target,name){
@@ -30,7 +31,7 @@ let  Mutation={
 		return mutations[name]=callback
 	}
 }
-mutations.is_login(){
+mutations.is_login=async function(){
 	let token=getCookie("graphyml")
 	if (token==undefined){
 		return false
@@ -40,16 +41,10 @@ mutations.is_login(){
 		"method":"GET",
 		"headers":{
 			"x-access-tokens":token
-		},
-		"body":JSON.stringify({
-			"<MUTATION>":"is_login",
-			"<GET>":["$self"],
-			"<QUERY>":{},
-			"<DATA>":{},
-			})
-		})
+		}})
+		user= await req.json()
+		return user
 
-		return await req.json()
 	}
 }
 mutations.login=async function(username,password){
@@ -66,6 +61,7 @@ mutations.login=async function(username,password){
 				console.log(response)
 				user={"token":response.token,"perms":response.perms,
 				"id":response.id,"username":response.username,"email":response.email}
+
 				return {"ok":req.status==200,"token":response.token,"perms":response.perms,
 				"id":response.id,"username":response.username,"email":response.email}
 				
@@ -76,6 +72,7 @@ mutations._get = async function(GET,mutation="get"){
 	let req=await fetch(_endpoint,{
 		"method":"POST",
 		"headers":{
+			"content-type":"application/json",
 			"x-access-tokens":token
 		},
 		"body":JSON.stringify({
@@ -89,17 +86,20 @@ mutations._get = async function(GET,mutation="get"){
 		let response
 		response=await req.json()
 		if (req.status!=200){
-			for (let callback of callbacks){
-				console.log(response)
-				callback({
-					mutation:mutation,
-					get:GET,
-					post:null,
-					query:null,
-					status:req.status,
-					error:response["error"]}
-					)
+			if (callbacks[mutation]){
+				for (let callback of callbacks[mutation]){
+					console.log(response)
+					callback({
+						mutation:mutation,
+						get:GET,
+						post:null,
+						query:null,
+						status:req.status,
+						error:response["error"]}
+						)
+				}
 			}
+			
 		}
 			
 		
@@ -108,7 +108,7 @@ mutations._get = async function(GET,mutation="get"){
 		return response.response
 	
 }
-mutations._post = async function(QUERY,DATA,mutation="post"){
+mutations._update = async function(QUERY,DATA,mutation="update"){
 		let token=getCookie("graphyml")
 			let get =[]
 			for (let item in QUERY){
@@ -117,6 +117,7 @@ mutations._post = async function(QUERY,DATA,mutation="post"){
 			let req=await fetch(_endpoint,{
 				"method":"POST",
 				"headers":{
+					"content-type":"application/json",
 					"x-access-tokens":token
 				},
 				"body":JSON.stringify({
@@ -130,17 +131,61 @@ mutations._post = async function(QUERY,DATA,mutation="post"){
 				let response
 				response=await req.json()
 				if (req.status!=200){
-					
-					for (let callback of callbacks){
-						callback({
-							mutation:mutation,
-							get:null,
-							post:DATA,
-							query:QUERY,
-							status:req.status,
-							error:response["error"]}
-							)
+					if (callbacks[mutation]){
+						for (let callback of callbacks[mutation]){
+							callback({
+								mutation:mutation,
+								get:null,
+								post:DATA,
+								query:QUERY,
+								status:req.status,
+								error:response["error"]}
+								)
+						}
 					}
+					
+					
+				}
+				
+				return response.response
+			
+
+
+			
+}
+mutations._post = async function(DATA,mutation="create"){
+		let token=getCookie("graphyml")
+
+			let req=await fetch(_endpoint,{
+				"method":"POST",
+				"headers":{
+					"content-type":"application/json",
+					"x-access-tokens":token
+				},
+				"body":JSON.stringify({
+					"<MUTATION>":mutation,
+					"<GET>":["$self"],
+					"<QUERY>":{},
+					"<DATA>":DATA,
+					})
+				})
+
+				let response
+				response=await req.json()
+				if (req.status!=200){
+					if (callbacks[mutation]){
+						for (let callback of callbacks[mutation]){
+							callback({
+								mutation:mutation,
+								get:null,
+								post:DATA,
+								query:QUERY,
+								status:req.status,
+								error:response["error"]}
+								)
+						}
+					}
+					
 					
 				}
 				
@@ -155,6 +200,7 @@ mutations._mutate = async function(GET,QUERY,DATA,mutation="mutation"){
 			let req=await fetch(_endpoint,{
 				"method":"POST",
 				"headers":{
+					"content-type":"application/json",
 					"x-access-tokens":token
 				},
 				"body":JSON.stringify({
@@ -165,12 +211,11 @@ mutations._mutate = async function(GET,QUERY,DATA,mutation="mutation"){
 					})
 				})
 				let response
-				response=await req.json()
-				if (req.status!=200){
-					
-					for (let callback of callbacks){
+				response=await req.json()	
+				if (callbacks[mutation]){
+					for (let callback of callbacks[mutation]){
 						callback({
-							mutation:name,
+							mutation:mutation,
 							get:GET,
 							post:DATA,
 							query:QUERY,
@@ -178,8 +223,10 @@ mutations._mutate = async function(GET,QUERY,DATA,mutation="mutation"){
 							error:response["error"]}
 							)
 					}
-					
 				}
+				
+					
+				
 
 				
 				return response.response
@@ -204,17 +251,19 @@ mutations.delete=async function (query,get={},mutation="delete"){
 				let response
 				
 				if (req.status!=200){
-					
-					for (let callback of callbacks){
-						callback({
-							mutation:name,
-							get:get,
-							post:data,
-							query:query,
-							status:req.status,
-							error:response["error"]}
-							)
+					if (callbacks[mutation]){
+						for (let callback of callbacks[mutation]){
+							callback({
+								mutation:name,
+								get:get,
+								post:data,
+								query:query,
+								status:req.status,
+								error:response["error"]}
+								)
+						}
 					}
+					
 					
 				}
 				else{
@@ -324,8 +373,8 @@ export let  getCookie=function(cname) {
 }
 
 export let checkCookie = function(name) {
-  let user = getCookie(name);
-  if (user != null) {
+  let _user = getCookie(name);
+  if (_user != null) {
     return true
   } else {
     return false
@@ -453,7 +502,24 @@ export let Socket=class {
 
 }
 
+export function add_callback(mutation,callback,options){
+	if(!callbacks.hasOwnProperty(mutation)){
+		callbacks[mutation]=[]
+	}
+	if (options && options.unique){
+		if (callbacks[mutation].length==0){
+			callbacks[mutation]=[callback]
+		}
+	}
+	else if (options && options.overwrite){
 
+			callbacks[mutation]=[callback]
+		
+	}else{
+		callbacks[mutation].push(callback)
+	}
+
+}
 
 export function has_perm(perm){
 	return perms
